@@ -9,10 +9,13 @@ from supabase import create_client, Client
 # --- ====================================================== ---
 # --- KUNCI DIAMBIL DARI STREAMLIT SECRETS (AMAN) ---
 # --- ====================================================== ---
+# (Baris 12)
 try:
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    # --> Lihat? 4 spasi di sini
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except KeyError:
+    # --> 4 spasi di sini juga
     st.error("ERROR: Supabase URL/Key tidak ditemukan. Atur di 'Settings > Secrets' di Streamlit Cloud.")
     st.stop()
 # --- ====================================================== ---
@@ -296,3 +299,4 @@ else:
             except Exception as e:
 
                 st.error(f"Gagal menghapus trade: {e}")
+
