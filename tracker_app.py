@@ -10,8 +10,8 @@ from supabase import create_client, Client
 # --- KUNCI DIAMBIL DARI STREAMLIT SECRETS (AMAN) ---
 # --- ====================================================== ---
 try:
-    SUPABASE_URL = st.secrets["https://oryjtesavbuhqhtcbybu.supabase.co"]
- SUPABASE_KEY=st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yeWp0ZXNhdmJ1aHFodGNieWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzIyODcsImV4cCI6MjA3ODQwODI4N30.o0LqR_rtmgDEKXZuocDtzykBdJaBpBa3sgKBUCyRU1c"]
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except KeyError:
     st.error("ERROR: Supabase URL/Key tidak ditemukan. Atur di 'Settings > Secrets' di Streamlit Cloud.")
     st.stop()
@@ -294,4 +294,5 @@ else:
                 st.session_state.trades = load_trades()
                 st.rerun()
             except Exception as e:
+
                 st.error(f"Gagal menghapus trade: {e}")
