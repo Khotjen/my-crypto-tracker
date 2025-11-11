@@ -84,8 +84,7 @@ if st.session_state.trades:
     total_buy_amount = buys.groupby('coin')['Amount'].sum()
     avg_buy_cost_df = (total_buy_cost / total_buy_amount).to_frame(name="Avg. Buy Price")
     
-    # --- INI DIA PERBAIKANNYA (baris 103) ---
-    # Mengganti `left_on='coin'` dengan `left_index=True`
+    # Perbaikan v9.3 (pie chart)
     summary_df = pd.merge(holdings_df, avg_buy_cost_df, left_index=True, right_index=True, how='left')
     
     portfolio_coins = summary_df.index.unique().tolist()
@@ -142,7 +141,7 @@ grand_total = total_spot_value + total_futures_equity
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker (Phase 9.3 - Cloud Ready)")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 9.4 - Cloud Ready)")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
@@ -156,7 +155,6 @@ else:
     chart_col, data_col = st.columns([0.4, 0.6])
     with chart_col:
         st.subheader("Spot Allocation")
-        # Kode pai ini sekarang seharusnya aman karena summary_df sudah benar
         pie_df = summary_df.reset_index().rename(columns={'coin': 'Coin'})
         fig = px.pie(pie_df, values='Current Value (USD)', names='Coin', title='Spot Allocation')
         fig.update_traces(textposition='inside', textinfo='percent+label')
@@ -190,7 +188,6 @@ else:
     with st.form("close_form"):
         pos_col_1, pos_col_2 = st.columns([1, 3])
         with pos_col_1:
-            # Menggunakan 'DB_ID' dari DataFrame untuk kejelasan
             position_id_to_close = st.number_input("Position DB_ID to close:", min_value=1, step=1)
         with pos_col_2:
             close_button = st.form_submit_button("Close Position")
@@ -263,8 +260,13 @@ with form_col2:
             if not fut_coin_id or fut_entry_price == 0 or fut_margin == 0: st.error("Harap isi semua field.")
             else:
                 new_position = {
-                    "coin_id": fut_coin_id, "direction": fut_direction, "entry_price": fut_entry_price,
-                    "margin": fut_margin, "leverage": fut_leverage
+                    "coin_id": fut_coin_id, 
+                    "direction": fut_direction, 
+                    "entry_price": fut_entry_price,
+                    "margin": fut_margin, 
+                    # --- INI DIA PERBAIKANNYA (baris 315) ---
+                    # Memaksa leverage menjadi angka bulat (integer)
+                    "leverage": int(fut_leverage)
                 }
                 try:
                     client.table('futures_positions').insert(new_position).execute()
@@ -273,6 +275,7 @@ with form_col2:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Gagal membuka posisi: {e}")
+                    st.exception(e) # Tampilkan error lengkap untuk debug
 
 st.divider()
 st.subheader("My Full Spot Trade Log (From Database)")
