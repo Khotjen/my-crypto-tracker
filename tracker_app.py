@@ -21,6 +21,7 @@ except KeyError:
 # --- KONEKSI KE SUPABASE ---
 @st.cache_resource
 def init_supabase_client():
+    """Membuat dan meng-cache koneksi Supabase agar tidak dibuat ulang setiap saat."""
     try:
         client = create_client(SUPABASE_URL, SUPABASE_KEY)
         return client
@@ -30,15 +31,13 @@ def init_supabase_client():
 
 client = init_supabase_client()
 
-# --- FUNGSI DATABASE BARU (Menggantikan .json) ---
+# --- FUNGSI DATABASE (Perbaikan 'date' huruf kecil) ---
 def load_trades():
     """Mengambil semua trade dari tabel 'spot_trades'."""
     try:
         response = client.table('spot_trades').select("*").execute()
         data = response.data
-        # Konversi string tanggal dari DB kembali ke objek 'date'
         for trade in data:
-            # --- INI DIA PERBAIKANNYA (baris 52) ---
             trade['date'] = datetime.strptime(trade['date'], '%Y-%m-%d').date()
         return data
     except Exception as e:
@@ -84,7 +83,11 @@ if st.session_state.trades:
     total_buy_cost = buys.groupby('coin')['Total Cost (USD)'].sum()
     total_buy_amount = buys.groupby('coin')['Amount'].sum()
     avg_buy_cost_df = (total_buy_cost / total_buy_amount).to_frame(name="Avg. Buy Price")
-    summary_df = pd.merge(holdings_df, avg_buy_cost_df, left_on='coin', right_index=True, how='left')
+    
+    # --- INI DIA PERBAIKANNYA (baris 103) ---
+    # Mengganti `left_on='coin'` dengan `left_index=True`
+    summary_df = pd.merge(holdings_df, avg_buy_cost_df, left_index=True, right_index=True, how='left')
+    
     portfolio_coins = summary_df.index.unique().tolist()
 
 if st.session_state.futures_positions:
@@ -139,7 +142,7 @@ grand_total = total_spot_value + total_futures_equity
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker (Phase 9.2 - Cloud Ready)")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 9.3 - Cloud Ready)")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
@@ -153,13 +156,15 @@ else:
     chart_col, data_col = st.columns([0.4, 0.6])
     with chart_col:
         st.subheader("Spot Allocation")
-        pie_df = summary_df.reset_index().rename(columns={'index': 'Coin'})
+        # Kode pai ini sekarang seharusnya aman karena summary_df sudah benar
+        pie_df = summary_df.reset_index().rename(columns={'coin': 'Coin'})
         fig = px.pie(pie_df, values='Current Value (USD)', names='Coin', title='Spot Allocation')
         fig.update_traces(textposition='inside', textinfo='percent+label')
         st.plotly_chart(fig, width='stretch')
     with data_col:
         st.subheader("Spot Holdings")
-        st.dataframe(summary_df.reset_index().rename(columns={'index': 'Coin'}).style.format({
+        display_df = summary_df.reset_index().rename(columns={'coin': 'Coin'})
+        st.dataframe(display_df.style.format({
             'Holdings': '{:,.8f}', 'Avg. Buy Price': '${:,.4f}', 'Live Price': '${:,.4f}',
             'Current Value (USD)': '${:,.2f}', 'P/L (USD)': '${:,.2f}'
         }), width='stretch')
@@ -185,6 +190,7 @@ else:
     with st.form("close_form"):
         pos_col_1, pos_col_2 = st.columns([1, 3])
         with pos_col_1:
+            # Menggunakan 'DB_ID' dari DataFrame untuk kejelasan
             position_id_to_close = st.number_input("Position DB_ID to close:", min_value=1, step=1)
         with pos_col_2:
             close_button = st.form_submit_button("Close Position")
