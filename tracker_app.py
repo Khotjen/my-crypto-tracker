@@ -9,13 +9,10 @@ from supabase import create_client, Client
 # --- ====================================================== ---
 # --- KUNCI DIAMBIL DARI STREAMLIT SECRETS (AMAN) ---
 # --- ====================================================== ---
-# (Baris 12)
 try:
-    # --> Lihat? 4 spasi di sini
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except KeyError:
-    # --> 4 spasi di sini juga
     st.error("ERROR: Supabase URL/Key tidak ditemukan. Atur di 'Settings > Secrets' di Streamlit Cloud.")
     st.stop()
 # --- ====================================================== ---
@@ -33,17 +30,16 @@ def init_supabase_client():
 
 client = init_supabase_client()
 
-# --- (Sisa kode dari v9.0 SAMA PERSIS) ---
-# --- (Tidak ada perubahan lain di bawah ini) ---
-
 # --- FUNGSI DATABASE BARU (Menggantikan .json) ---
 def load_trades():
     """Mengambil semua trade dari tabel 'spot_trades'."""
     try:
         response = client.table('spot_trades').select("*").execute()
         data = response.data
+        # Konversi string tanggal dari DB kembali ke objek 'date'
         for trade in data:
-            trade['Date'] = datetime.strptime(trade['Date'], '%Y-%m-%d').date()
+            # --- INI DIA PERBAIKANNYA (baris 52) ---
+            trade['date'] = datetime.strptime(trade['date'], '%Y-%m-%d').date()
         return data
     except Exception as e:
         st.error(f"Error membaca 'spot_trades': {e}"); return []
@@ -69,7 +65,7 @@ if 'futures_positions' not in st.session_state:
     st.session_state.futures_positions = load_futures_positions()
 
 # 3. --- ====================================================== ---
-# --- SEMUA KALKULASI (Tidak ada yang berubah dari v8.0) ---
+# --- SEMUA KALKULASI (Memperbaiki nama kolom DB) ---
 # --- ====================================================== ---
 total_spot_value = 0.0; total_spot_pl = 0.0; total_futures_equity = 0.0
 total_futures_margin = 0.0; total_futures_pnl = 0.0; summary_df = pd.DataFrame()
@@ -141,11 +137,9 @@ grand_total = total_spot_value + total_futures_equity
 # 4. --- ===================================================== ---
 # --- TAMPILAN APLIKASI (Tidak ada yang berubah) ---
 # --- ===================================================== ---
-# (Semua kode st.title, st.metric, st.dataframe, dll Anda tetap sama persis di sini)
-# (Saya singkat agar tidak terlalu panjang, tapi di file Anda, semua kode tampilan tetap ada)
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker (Phase 9.1 - Cloud Ready)")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 9.2 - Cloud Ready)")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
@@ -297,6 +291,4 @@ else:
                 st.session_state.trades = load_trades()
                 st.rerun()
             except Exception as e:
-
                 st.error(f"Gagal menghapus trade: {e}")
-
