@@ -52,23 +52,25 @@ def load_futures_positions():
     except Exception as e:
         st.error(f"Error membaca 'futures_positions': {e}"); return []
 
-# --- FUNGSI BARU v11: Membaca dompet futures ---
-# --- FUNGSI BARU v11 (Diperbaiki): Membaca dompet futures ---
+# --- ====================================================== ---
+# --- INI DIA PERBAIKANNYA (v11.1) ---
+# --- ====================================================== ---
 @st.cache_data(ttl=10) # Cache saldo selama 10 detik
 def load_futures_wallet_balance():
     """Mengambil saldo 'tersedia' dari tabel 'futures_wallet'."""
     try:
         # Kita tidak lagi pakai .single() agar tidak error jika 0 baris
         response = client.table('futures_wallet').select("balance").eq('id', FUTURES_WALLET_ID).execute()
-
+        
         # Cek apakah kita benar-benar dapat data
         if response.data:
             # Jika ya, kembalikan saldonya
             return response.data[0]['balance']
         else:
             # Jika tidak ada baris (0 rows), anggap saja saldonya 0
+            # Ini adalah inti perbaikannya.
             return 0.0
-
+            
     except Exception as e:
         st.error(f"Error membaca 'futures_wallet': {e}")
         return 0.0
@@ -77,7 +79,16 @@ def load_futures_wallet_balance():
 def update_futures_wallet_balance(new_balance):
     """Meng-update saldo 'tersedia' di tabel 'futures_wallet'."""
     try:
-        client.table('futures_wallet').update({"balance": new_balance}).eq('id', FUTURES_WALLET_ID).execute()
+        # Cek dulu apakah baris datanya ada
+        response = client.table('futures_wallet').select("id").eq('id', FUTURES_WALLET_ID).execute()
+        
+        if response.data:
+            # Jika ada, UPDATE
+            client.table('futures_wallet').update({"balance": new_balance}).eq('id', FUTURES_WALLET_ID).execute()
+        else:
+            # Jika tidak ada (kasus dompet 0 baris), INSERT baris baru
+            client.table('futures_wallet').insert({"id": FUTURES_WALLET_ID, "balance": new_balance}).execute()
+            
         # Hapus cache agar pembacaan berikutnya mendapat data baru
         st.cache_data.clear() 
     except Exception as e:
@@ -157,7 +168,6 @@ if st.session_state.futures_positions:
     for pos in st.session_state.futures_positions:
         live_price = 1.0 if pos['coin_id'] == 'tether' else all_live_prices.get(pos['coin_id'], 0)
         
-        # Hitung Ukuran Posisi
         pos_size_usd = pos['margin'] * pos['leverage']
         pos_size_coins = pos_size_usd / pos['entry_price']
         
@@ -190,7 +200,7 @@ grand_total = total_spot_value + total_futures_equity
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 11.1 - Perbaikan Dompet)")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
