@@ -92,7 +92,10 @@ if st.session_state.trades:
 if st.session_state.futures_positions:
     futures_coins = list(set([pos['coin_id'] for pos in st.session_state.futures_positions]))
 
-all_coins = list(set(portfolio_coins + futures_coins))
+# Tambahkan 'tether' ke daftar koin yang harganya diambil,
+# karena kita mungkin membutuhkannya untuk P/L bahkan jika kita tidak memegangnya
+all_coins = list(set(portfolio_coins + futures_coins + ['tether']))
+
 if all_coins:
     try:
         price_data = cg.get_price(ids=all_coins, vs_currencies='usd')
@@ -110,7 +113,9 @@ if not summary_df.empty:
 if st.session_state.futures_positions:
     positions_to_display = []
     for pos in st.session_state.futures_positions:
-        live_price = all_live_prices.get(pos['coin_id'], 0)
+        # Gunakan harga 1.0 untuk tether, atau harga live untuk koin lain
+        live_price = 1.0 if pos['coin_id'] == 'tether' else all_live_prices.get(pos['coin_id'], 0)
+        
         pos_size_usd = pos['margin'] * pos['leverage']
         pos_size_coins = pos_size_usd / pos['entry_price']
         
@@ -121,7 +126,12 @@ if st.session_state.futures_positions:
             liq_price = pos['entry_price'] * (1 + (1 / pos['leverage']))
             pnl_usd = (pos['entry_price'] - live_price) * pos_size_coins
         
-        pnl_perc = (pnl_usd / pos['margin']) * 100
+        # Pengecualian untuk 'tether' karena harga live-nya selalu 1
+        if pos['coin_id'] == 'tether':
+            pnl_perc = (pnl_usd / pos['margin']) * 100 if pos['margin'] != 0 else 0
+        else:
+            pnl_perc = (pnl_usd / pos['margin']) * 100 if pos['margin'] != 0 else 0
+
         total_futures_margin += pos['margin']
         total_futures_pnl += pnl_usd
         
@@ -137,11 +147,11 @@ if st.session_state.futures_positions:
 grand_total = total_spot_value + total_futures_equity
 
 # 4. --- ===================================================== ---
-# --- TAMPILAN APLIKASI (Tidak ada yang berubah) ---
+# --- TAMPILAN APLIKASI ---
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker (Phase 9.4 - Cloud Ready)")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 10.0 - Realisasi P/L)")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
@@ -184,22 +194,64 @@ else:
         'Liq. Price': '${:,.4f}'
     }), width='stretch', hide_index=True)
 
-    st.subheader("Close a Position")
+    # --- ====================================================== ---
+    # --- LOGIKA "CLOSE POSITION" BARU (PEROMBAKAN BESAR) ---
+    # --- ====================================================== ---
+    st.subheader("Close a Position & Realize P/L")
     with st.form("close_form"):
         pos_col_1, pos_col_2 = st.columns([1, 3])
         with pos_col_1:
             position_id_to_close = st.number_input("Position DB_ID to close:", min_value=1, step=1)
         with pos_col_2:
-            close_button = st.form_submit_button("Close Position")
+            close_button = st.form_submit_button("Close & Bank P/L to Spot")
+        
         if close_button:
             try:
-                client.table('futures_positions').delete().eq('id', int(position_id_to_close)).execute()
-                st.success(f"Position ID {position_id_to_close} ditutup.")
-                st.session_state.futures_positions = load_futures_positions()
-                st.rerun()
+                # 1. Temukan posisi yang akan ditutup dari DataFrame yang sudah kita hitung
+                pos_data_to_close = futures_df[futures_df['DB_ID'] == position_id_to_close].to_dict('records')
+                
+                if not pos_data_to_close:
+                    st.error(f"Error: Tidak bisa menemukan posisi dengan DB_ID {position_id_to_close}.")
+                else:
+                    pos_data = pos_data_to_close[0] # Ambil datanya
+                    
+                    # 2. Hitung nilai total pencairan (margin + P/L)
+                    final_pnl = pos_data['P/L (USD)']
+                    original_margin = pos_data['Margin']
+                    total_cash_out = original_margin + final_pnl
+                    
+                    if total_cash_out < 0:
+                        total_cash_out = 0 # Anda tidak bisa mencairkan nilai negatif, Anda hanya kehilangan margin
+                    
+                    # 3. Buat trade "Buy" baru untuk 'tether' (USDT)
+                    usdt_spot_trade = {
+                        "date": str(datetime.now().date()), # Tanggal hari ini
+                        "coin": "tether", # ID CoinGecko untuk USDT
+                        "type": "Buy",
+                        "amount": total_cash_out,
+                        "price_per_coin": 1.0,
+                        "total_cost_usd": total_cash_out
+                    }
+                    
+                    # 4. Simpan P/L Anda sebagai trade spot baru
+                    client.table('spot_trades').insert(usdt_spot_trade).execute()
+                    
+                    # 5. Hapus posisi futures yang lama (setelah P/L aman)
+                    client.table('futures_positions').delete().eq('id', int(position_id_to_close)).execute()
+                    
+                    st.success(f"Posisi {position_id_to_close} ditutup. Total ${total_cash_out:,.2f} (Margin + P/L) dipindahkan ke 'tether' (USDT) di dompet Spot Anda.")
+                    
+                    # 6. Muat ulang semua data dari database
+                    st.session_state.trades = load_trades()
+                    st.session_state.futures_positions = load_futures_positions()
+                    st.rerun() # Rerun aplikasi untuk menampilkan data baru
+
             except Exception as e:
-                st.error(f"Gagal menutup posisi: {e}")
+                st.error(f"Gagal menutup posisi & merealisasikan P/L: {e}")
+                st.exception(e)
 st.divider()
+
+# --- (Sisa file sama persis) ---
 
 st.subheader("Spot Portfolio Historical Performance")
 if not st.session_state.trades:
@@ -264,9 +316,7 @@ with form_col2:
                     "direction": fut_direction, 
                     "entry_price": fut_entry_price,
                     "margin": fut_margin, 
-                    # --- INI DIA PERBAIKANNYA (baris 315) ---
-                    # Memaksa leverage menjadi angka bulat (integer)
-                    "leverage": int(fut_leverage)
+                    "leverage": int(fut_leverage) # Perbaikan v9.4
                 }
                 try:
                     client.table('futures_positions').insert(new_position).execute()
@@ -275,7 +325,7 @@ with form_col2:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Gagal membuka posisi: {e}")
-                    st.exception(e) # Tampilkan error lengkap untuk debug
+                    st.exception(e)
 
 st.divider()
 st.subheader("My Full Spot Trade Log (From Database)")
