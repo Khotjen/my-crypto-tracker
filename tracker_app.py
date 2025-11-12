@@ -180,7 +180,7 @@ grand_total = total_spot_value + total_futures_equity
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker (Phase 11.0 - Dompet Futures)")
+st.title("🚀 My Supercharged Crypto Tracker")
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
