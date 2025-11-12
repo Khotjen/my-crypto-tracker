@@ -53,14 +53,24 @@ def load_futures_positions():
         st.error(f"Error membaca 'futures_positions': {e}"); return []
 
 # --- FUNGSI BARU v11: Membaca dompet futures ---
+# --- FUNGSI BARU v11 (Diperbaiki): Membaca dompet futures ---
 @st.cache_data(ttl=10) # Cache saldo selama 10 detik
 def load_futures_wallet_balance():
     """Mengambil saldo 'tersedia' dari tabel 'futures_wallet'."""
     try:
-        response = client.table('futures_wallet').select("balance").eq('id', FUTURES_WALLET_ID).single().execute()
-        return response.data['balance']
+        # Kita tidak lagi pakai .single() agar tidak error jika 0 baris
+        response = client.table('futures_wallet').select("balance").eq('id', FUTURES_WALLET_ID).execute()
+
+        # Cek apakah kita benar-benar dapat data
+        if response.data:
+            # Jika ya, kembalikan saldonya
+            return response.data[0]['balance']
+        else:
+            # Jika tidak ada baris (0 rows), anggap saja saldonya 0
+            return 0.0
+
     except Exception as e:
-        st.error(f"Error membaca 'futures_wallet': {e}. Apakah Anda sudah memasukkan saldo awal (misal 1000)?")
+        st.error(f"Error membaca 'futures_wallet': {e}")
         return 0.0
 
 # --- FUNGSI BARU v11: Update dompet futures ---
