@@ -83,6 +83,40 @@ try:
 except Exception as e:
     st.error(f"Error connecting to CoinGecko API: {e}"); st.stop()
 
+# --- ====================================================== ---
+# --- FUNGSI BARU v11.3: Ambil Data Grafik Global ---
+# --- ====================================================== ---
+@st.cache_data(ttl=600) # Cache data ini selama 10 menit
+def get_global_market_data():
+    """Mengambil data harga BTC (7h) dan Dominasi BTC (30h)."""
+    try:
+        # 1. Ambil data harga BTC 7 hari (interval per jam)
+        btc_price_data = cg.get_coin_market_chart_by_id('bitcoin', 'usd', 7)
+        price_df = pd.DataFrame(btc_price_data['prices'], columns=['timestamp', 'price'])
+        price_df['date'] = pd.to_datetime(price_df['timestamp'], unit='ms')
+        
+        # 2. Ambil data Dominasi BTC 30 hari (interval harian)
+        # Kita perlu mengambil 'market_caps' untuk ini
+        btc_dom_data = cg.get_coin_market_chart_by_id('bitcoin', 'usd', 30)
+        dom_df = pd.DataFrame(btc_dom_data['market_caps'], columns=['timestamp', 'market_cap_btc'])
+        
+        global_data = cg.get_global_market_chart_range(
+            from_timestamp=(datetime.now() - pd.Timedelta(days=30)).timestamp(),
+            to_timestamp=datetime.now().timestamp()
+        )
+        global_mcap_df = pd.DataFrame(global_data['market_caps'], columns=['timestamp', 'market_cap_global'])
+
+        # Gabungkan data dominasi
+        dom_df = pd.merge(dom_df, global_mcap_df, on='timestamp', how='inner')
+        dom_df['date'] = pd.to_datetime(dom_df['timestamp'], unit='ms')
+        dom_df['btc_dominance'] = (dom_df['market_cap_btc'] / dom_df['market_cap_global']) * 100
+        
+        return price_df, dom_df
+
+    except Exception as e:
+        st.warning(f"Gagal mengambil data pasar global: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
 # 2. --- Initialize Session State ---
 if 'trades' not in st.session_state:
     st.session_state.trades = load_trades()
@@ -91,9 +125,7 @@ if 'futures_positions' not in st.session_state:
 if 'futures_balance' not in st.session_state:
     st.session_state.futures_balance = load_futures_wallet_balance()
 
-# 3. --- ====================================================== ---
-# --- SEMUA KALKULASI v11 ---
-# --- ====================================================== ---
+# --- (Kalkulasi Portofolio Anda tidak berubah) ---
 total_spot_value = 0.0; total_spot_pl = 0.0
 summary_df = pd.DataFrame(); portfolio_coins = []; futures_coins = []
 available_futures_balance = st.session_state.futures_balance
@@ -101,7 +133,6 @@ total_futures_margin_used = 0.0
 total_futures_pnl = 0.0
 futures_df = pd.DataFrame()
 
-# (Kalkulasi Spot)
 if st.session_state.trades:
     df = pd.DataFrame(st.session_state.trades)
     df['Amount'] = pd.to_numeric(df['amount'])
@@ -117,7 +148,6 @@ if st.session_state.trades:
     summary_df = pd.merge(holdings_df, avg_buy_cost_df, left_index=True, right_index=True, how='left')
     portfolio_coins = summary_df.index.unique().tolist()
 
-# (Kalkulasi Futures)
 if st.session_state.futures_positions:
     futures_coins = list(set([pos['coin_id'] for pos in st.session_state.futures_positions]))
     total_futures_margin_used = sum(pos['margin'] for pos in st.session_state.futures_positions)
@@ -130,7 +160,6 @@ if all_coins:
     except Exception as e:
         st.error(f"Error fetching live prices: {e}")
 
-# (Finalisasi Kalkulasi Spot)
 if not summary_df.empty:
     summary_df['Live Price'] = summary_df.index.map(lambda coin: all_live_prices.get(coin, 0))
     summary_df['Current Value (USD)'] = summary_df['Holdings'] * summary_df['Live Price']
@@ -138,7 +167,6 @@ if not summary_df.empty:
     total_spot_value = summary_df['Current Value (USD)'].sum()
     total_spot_pl = summary_df['P/L (USD)'].sum()
 
-# (Finalisasi Kalkulasi Futures)
 if st.session_state.futures_positions:
     positions_to_display = []
     for pos in st.session_state.futures_positions:
@@ -161,19 +189,51 @@ if st.session_state.futures_positions:
             "Margin": pos['margin'], "Leverage": f"{pos['leverage']}x", "Entry Price": pos['entry_price'],
             "Live Price": live_price, "P/L (USD)": pnl_usd, "P/L (%)": pnl_perc, "Liq. Price": liq_price
         })
-    
     futures_df = pd.DataFrame(positions_to_display)
 
-# (Kalkulasi Metrik Final v11)
 total_futures_equity = available_futures_balance + total_futures_margin_used + total_futures_pnl
 grand_total = total_spot_value + total_futures_equity
 
 # 4. --- ===================================================== ---
-# --- TAMPILAN APLIKASI v11 ---
+# --- TAMPILAN APLIKASI v11.3 ---
 # --- ===================================================== ---
 
 st.set_page_config(page_title="My Crypto Tracker", page_icon="🚀", layout="wide")
-st.title("🚀 My Supercharged Crypto Tracker ")
+st.title("🚀 My Supercharged Crypto Tracker (Phase 11.3)")
+
+# --- ====================================================== ---
+# --- BAGIAN BARU v11.3: Dashboard Pasar Global ---
+# --- ====================================================== ---
+st.subheader("Global Market Overview")
+btc_price_chart_df, btc_dom_chart_df = get_global_market_data()
+
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    if not btc_price_chart_df.empty:
+        # Ambil harga BTC saat ini dari data
+        current_btc_price = btc_price_chart_df.iloc[-1]['price']
+        st.metric(label="Current Bitcoin Price", value=f"${current_btc_price:,.2f}")
+        
+        fig_price = px.line(btc_price_chart_df, x='date', y='price', title='BTC Price (7-Day)')
+        fig_price.update_layout(xaxis_title=None, yaxis_title='Price (USD)', yaxis_tickprefix='$', yaxis_tickformat = ',.2f')
+        st.plotly_chart(fig_price, width='stretch')
+    else:
+        st.info("Tidak dapat memuat grafik harga BTC.")
+
+with chart_col2:
+    if not btc_dom_chart_df.empty:
+        # Ambil dominasi BTC saat ini dari data
+        current_btc_dom = btc_dom_chart_df.iloc[-1]['btc_dominance']
+        st.metric(label="Current BTC Dominance", value=f"{current_btc_dom:.2f}%")
+        
+        fig_dom = px.line(btc_dom_chart_df, x='date', y='btc_dominance', title='BTC Dominance (30-Day)')
+        fig_dom.update_layout(xaxis_title=None, yaxis_title='Dominance (%)', yaxis_ticksuffix='%')
+        st.plotly_chart(fig_dom, width='stretch')
+    else:
+        st.info("Tidak dapat memuat grafik dominasi BTC.")
+st.divider()
+# --- AKHIR BAGIAN BARU ---
 
 st.subheader("Total Portfolio Value")
 st.metric(label="Total Combined Equity (Spot + Futures)", value=f"${grand_total:,.2f}", delta=f"${total_spot_pl + total_futures_pnl:,.2f} (Total P/L)")
@@ -365,25 +425,18 @@ else:
             except Exception as e:
                 st.error(f"Gagal menghapus trade: {e}")
 
-# --- ====================================================== ---
-# --- BAGIAN BARU v11.2: ZONA BAHAYA ---
-# --- ====================================================== ---
 st.divider()
 st.subheader("--- 📛 ZONA BAHAYA 📛 ---")
 st.warning("Tindakan di bawah ini permanen dan tidak bisa dibatalkan. Data Anda akan hilang selamanya.")
-
 col_danger_1, col_danger_2 = st.columns(2)
-
 with col_danger_1:
     with st.form("clear_spot_form"):
         st.write("Tekan tombol ini untuk menghapus **SEMUA** riwayat trade Spot Anda secara permanen.")
         clear_spot_button = st.form_submit_button("🔥 HAPUS SEMUA SPOT TRADES 🔥", type="primary")
-
         if clear_spot_button:
             try:
-                # Perintah 'gt' (greater than) 'id', 0 adalah cara aman untuk bilang "hapus semua"
                 client.table('spot_trades').delete().gt('id', 0).execute() 
-                st.session_state.trades = [] # Kosongkan state lokal
+                st.session_state.trades = []
                 st.success("SEMUA trade spot telah dihapus dari database.")
                 st.rerun()
             except Exception as e:
@@ -393,17 +446,12 @@ with col_danger_2:
     with st.form("clear_futures_form"):
         st.write("Tekan ini untuk menghapus **SEMUA** posisi Futures DAN mengosongkan Dompet Futures Anda ke $0.")
         clear_futures_button = st.form_submit_button("🔥 HAPUS SEMUA FUTURES 🔥", type="primary")
-
         if clear_futures_button:
             try:
-                # 1. Hapus semua posisi
                 client.table('futures_positions').delete().gt('id', 0).execute()
-                
-                # 2. Kosongkan dompet
-                update_futures_wallet_balance(0.0) # Kita sudah punya fungsi ini
-                
-                st.session_state.futures_positions = [] # Kosongkan state lokal
-                st.session_state.futures_balance = 0.0 # Kosongkan state lokal
+                update_futures_wallet_balance(0.0)
+                st.session_state.futures_positions = []
+                st.session_state.futures_balance = 0.0
                 st.success("SEMUA posisi futures DAN saldo dompet telah dihapus.")
                 st.rerun()
             except Exception as e:
